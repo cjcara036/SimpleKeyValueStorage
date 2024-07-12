@@ -1,4 +1,4 @@
-package application;
+package data_processor;
 
 import java.io.*;
 import java.nio.file.*;
@@ -65,14 +65,19 @@ public class SimpleKeyValueStorage {
         }
     }
 
-    // Description: Imports all key-value pairs from a source storage into this storage instance
+ // Description: Imports all key-value pairs from a source storage into this storage instance
     /*
      * Input Parameters
      *      > sourceStorage         (SimpleKeyValueStorage)     - The source storage instance from which data will be imported
+     *      > generateNGRAM         (boolean)                   - Flag to indicate whether to generate NGRAMs during the set operation
      * Output: None
      * Throws: IOException if there is an error reading from the source or writing to this instance
      */
     public void transferFrom(SimpleKeyValueStorage sourceStorage) throws IOException {
+    	transferFrom(sourceStorage,false);
+    }
+    
+    public void transferFrom(SimpleKeyValueStorage sourceStorage, boolean generateNGRAM) throws IOException {
         List<Future<Void>> futures = new ArrayList<>();
         for (int i = 0; i < sourceStorage.storageBinCount; i++) {
             final int binIndex = i;
@@ -87,9 +92,7 @@ public class SimpleKeyValueStorage {
                             transferContent.put(strippedKey, value);
                         }
                     });
-                    synchronized (KVPool) {
-                        KVPool.putAll(transferContent);
-                    }
+                    set(transferContent, generateNGRAM);
                 }
                 return null;
             }));
@@ -97,6 +100,7 @@ public class SimpleKeyValueStorage {
         waitForCompletion(futures);
         sync();
     }
+
 
     // Description: Reads Key-Value Pairs from Storage
     /*
@@ -128,17 +132,17 @@ public class SimpleKeyValueStorage {
         for (int y : tmp_binFileList) {
             futures.add(executorService.submit(() -> readFileContents(y)));
         }
-
+        HashMap<String,String> binContents = new HashMap<>();
         try {
             for (Future<HashMap<String, String>> future : futures) {
-                outputHashMap.putAll(future.get());
+                binContents.putAll(future.get());
             }
         } catch (InterruptedException | ExecutionException e) {
             e.printStackTrace();
         }
 
         for (String x : queryKeyList) {
-            outputHashMap.put(x, outputHashMap.get(KEYWORD_KV + DIV_KEY + x));
+            outputHashMap.put(x, binContents.get(KEYWORD_KV + DIV_KEY + x));
         }
 
         return outputHashMap;
