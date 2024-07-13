@@ -1,4 +1,4 @@
-package data_processor;
+package application;
 
 import java.io.*;
 import java.nio.file.*;
@@ -320,7 +320,10 @@ public class SimpleKeyValueStorage {
             }
 
             long fileChecksum = Long.parseLong(allLines.get(0));
-            List<String> dataLines = allLines.subList(1, allLines.size());
+            List<String> dataLines = allLines.stream()
+            	    .skip(1)
+            	    .filter(line -> !line.trim().isEmpty() && !line.trim().startsWith("//"))
+            	    .collect(Collectors.toList());
             if (enableParityFeature) {
                 CRC32 crc = new CRC32();
                 dataLines.forEach(line -> {
