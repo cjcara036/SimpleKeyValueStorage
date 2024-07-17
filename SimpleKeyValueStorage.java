@@ -35,10 +35,6 @@ public class SimpleKeyValueStorage {
     // Executor for parallel tasks
     private final ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
-    // Locks for synchronizing file access
-    private final ConcurrentHashMap<Integer, Object> fileLocks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Object> parityFileLocks = new ConcurrentHashMap<>();
-
     // Description: Class constructor
     /* Input Parameters
      *      > storageDirectory       (String)        - Contains link to key-value storage directory
@@ -78,26 +74,21 @@ public class SimpleKeyValueStorage {
     }
     
     public void transferFrom(SimpleKeyValueStorage sourceStorage, boolean generateNGRAM) throws IOException {
-        List<Future<Void>> futures = new ArrayList<>();
         for (int i = 0; i < sourceStorage.storageBinCount; i++) {
             final int binIndex = i;
-            futures.add(executorService.submit(() -> {
-                Path binFilePath = sourceStorage.keyValueStorageLocation.resolve(SimpleKeyValueStorage.FILE_PREFIX + binIndex + SimpleKeyValueStorage.FILE_EXTENSION);
-                if (Files.exists(binFilePath)) {
-                    HashMap<String, String> sourceFileContent = sourceStorage.readFileContents(binIndex);
-                    HashMap<String, String> transferContent = new HashMap<>();
-                    sourceFileContent.forEach((key, value) -> {
-                        if (key.contains(SimpleKeyValueStorage.KEYWORD_KV)) {
-                            String strippedKey = key.replace(SimpleKeyValueStorage.KEYWORD_KV + SimpleKeyValueStorage.DIV_KEY, "");
-                            transferContent.put(strippedKey, value);
-                        }
-                    });
-                    set(transferContent, generateNGRAM);
-                }
-                return null;
-            }));
+            Path binFilePath = sourceStorage.keyValueStorageLocation.resolve(SimpleKeyValueStorage.FILE_PREFIX + binIndex + SimpleKeyValueStorage.FILE_EXTENSION);
+            if (Files.exists(binFilePath)) {
+                HashMap<String, String> sourceFileContent = sourceStorage.readFileContents(binIndex);
+                HashMap<String, String> transferContent = new HashMap<>();
+                sourceFileContent.forEach((key, value) -> {
+                    if (key.contains(SimpleKeyValueStorage.KEYWORD_KV)) {
+                        String strippedKey = key.replace(SimpleKeyValueStorage.KEYWORD_KV + SimpleKeyValueStorage.DIV_KEY, "");
+                        transferContent.put(strippedKey, value);
+                    }
+                });
+                set(transferContent, generateNGRAM);
+            }
         }
-        waitForCompletion(futures);
         sync();
     }
 
@@ -181,26 +172,14 @@ public class SimpleKeyValueStorage {
             int binFile = hashKey(x);
             fileUpdateList.computeIfAbsent(binFile, k -> new HashMap<>()).put(x, KVPool.get(x));
         }
-
-        List<Future<Void>> futures = new ArrayList<>();
-        for (Map.Entry<Integer, HashMap<String, String>> entry : fileUpdateList.entrySet()) {
-            int binFile = entry.getKey();
-            HashMap<String, String> dataMap = entry.getValue();
-            futures.add(executorService.submit(() -> {
-                synchronized (getFileLock(binFile)) {
-                    try {
-                        HashMap<String, String> binFileContent = readFileContents(binFile);
-                        binFileContent.putAll(dataMap);
-                        writeFileContents(binFile, binFileContent);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                return null;
-            }));
+        for (Integer x:fileUpdateList.keySet()) {
+        	try {
+				writeFileContents(x, fileUpdateList.get(x));
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
         }
 
-        waitForCompletion(futures);
         KVPool.clear();
     }
 
@@ -219,45 +198,40 @@ public class SimpleKeyValueStorage {
         keysToDelete.forEach(key -> KVPool.remove(KEYWORD_KV + DIV_KEY + key));
         Map<Integer, Set<String>> fileUpdates = groupUpdatesByFile(keysToDelete);
 
-        List<Future<Void>> futures = new ArrayList<>();
         for (Map.Entry<Integer, Set<String>> entry : fileUpdates.entrySet()) {
             int binNumber = entry.getKey();
             Set<String> keysInFile = entry.getValue();
-            futures.add(executorService.submit(() -> {
-                synchronized (getFileLock(binNumber)) {
-                    try {
-                        HashMap<String, String> fileContent = readFileContents(binNumber);
-                        boolean fileChanged = false;
-                        for (String key : keysInFile) {
-                            if (key.startsWith(KEYWORD_KV + DIV_KEY)) {
+            
+            try {
+                HashMap<String, String> fileContent = readFileContents(binNumber);
+                boolean fileChanged = false;
+                
+                for (String key : keysInFile) {
+                    if (key.startsWith(KEYWORD_KV + DIV_KEY)) {
+                        fileContent.remove(key);
+                        fileChanged = true;
+                    } else if (key.startsWith(KEYWORD_TRIGRAM + DIV_KEY)) {
+                        String value = fileContent.get(key);
+                        if (value != null) {
+                            List<String> keys = new ArrayList<>(Arrays.asList(value.split(",")));
+                            keys.removeAll(keysToDelete);
+                            if (keys.isEmpty()) {
                                 fileContent.remove(key);
-                                fileChanged = true;
-                            } else if (key.startsWith(KEYWORD_TRIGRAM + DIV_KEY)) {
-                                String value = fileContent.get(key);
-                                if (value != null) {
-                                    List<String> keys = new ArrayList<>(Arrays.asList(value.split(",")));
-                                    keys.removeAll(keysToDelete);
-                                    if (keys.isEmpty()) {
-                                        fileContent.remove(key);
-                                    } else {
-                                        fileContent.put(key, String.join(",", keys));
-                                    }
-                                    fileChanged = true;
-                                }
+                            } else {
+                                fileContent.put(key, String.join(",", keys));
                             }
+                            fileChanged = true;
                         }
-                        if (fileChanged) {
-                            writeFileContents(binNumber, fileContent);
-                        }
-                    } catch (IOException e) {
-                        System.err.println("<SimpleKeyValueStorage> Error updating file: " + e.getMessage());
                     }
                 }
-                return null;
-            }));
-        }
-
-        waitForCompletion(futures);
+                
+                if (fileChanged) {
+                    writeFileContents(binNumber, fileContent);
+                }
+            } catch (IOException e) {
+                System.err.println("<SimpleKeyValueStorage> Error updating file: " + e.getMessage());
+            }
+        }    
     }
 
     private Map<Integer, Set<String>> groupUpdatesByFile(List<String> keysToDelete) {
@@ -387,12 +361,10 @@ public class SimpleKeyValueStorage {
             long checksum = crc.getValue();
 
             // Write checksum and data to file
-            synchronized (getFileLock(binNumber)) {
-                try (BufferedWriter writer = Files.newBufferedWriter(filePath)) {
-                    writer.write(String.valueOf(checksum)); // Write checksum in the first line
-                    writer.newLine();
-                    writer.write(dataBuilder.toString()); // Write data
-                }
+            try (BufferedWriter writer = Files.newBufferedWriter(filePath)) {
+                writer.write(String.valueOf(checksum)); // Write checksum in the first line
+                writer.newLine();
+                writer.write(dataBuilder.toString()); // Write data
             }
 
             // Update Parity File
@@ -429,9 +401,7 @@ public class SimpleKeyValueStorage {
         Path targetParityFile = keyValueStorageLocation.resolve(FILE_PREFIX_PARITY + parityBinNumberStart + DIV_PARITY_FILE_NAME + parityBinNumberEnd + FILE_EXTENSION_PARITY);
 
         // Build the ParityFile
-        synchronized (getParityFileLock(parityBinNumberStart, parityBinNumberEnd)) {
-            xorFiles(listOfBinFilesInParityGroup, targetParityFile);
-        }
+        xorFiles(listOfBinFilesInParityGroup, targetParityFile);
     }
 
     // Description: Recovers a Bin File
@@ -453,9 +423,7 @@ public class SimpleKeyValueStorage {
         Path targetRecoveredFile = keyValueStorageLocation.resolve(FILE_PREFIX + binNumber + FILE_EXTENSION);
 
         // Build the ParityFile
-        synchronized (getParityFileLock(parityBinNumberStart, parityBinNumberEnd)) {
-            xorFiles(listOfBinFilesInParityGroupPlusParity, targetRecoveredFile);
-        }
+        xorFiles(listOfBinFilesInParityGroupPlusParity, targetRecoveredFile);
     }
 
     // MISC FUNCTION----------------------------------------------------------------------------------
@@ -726,25 +694,6 @@ public class SimpleKeyValueStorage {
                 }
             }
         }
-    }
-
-    private void waitForCompletion(List<Future<Void>> futures) {
-        for (Future<Void> future : futures) {
-            try {
-                future.get();
-            } catch (InterruptedException | ExecutionException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private Object getFileLock(int binFile) {
-        return fileLocks.computeIfAbsent(binFile, k -> new Object());
-    }
-
-    private Object getParityFileLock(int parityStart, int parityEnd) {
-        String parityFileKey = parityStart + "_" + parityEnd;
-        return parityFileLocks.computeIfAbsent(parityFileKey, k -> new Object());
     }
     
    
