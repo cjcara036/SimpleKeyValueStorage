@@ -127,19 +127,13 @@ public class SimpleKeyValueStorage {
 
         List<String> modQueryKeyList = queryKeyList.stream().map(s -> KEYWORD_KV + DIV_KEY + s).collect(Collectors.toList());
         List<Integer> tmp_binFileList = getListOfBinFiles(modQueryKeyList, false);
-
-        List<Future<HashMap<String, String>>> futures = new ArrayList<>();
-        for (int y : tmp_binFileList) {
-            futures.add(executorService.submit(() -> readFileContents(y)));
-        }
         HashMap<String,String> binContents = new HashMap<>();
-        try {
-            for (Future<HashMap<String, String>> future : futures) {
-                binContents.putAll(future.get());
-            }
-        } catch (InterruptedException | ExecutionException e) {
-            e.printStackTrace();
-        }
+        for(Integer binFileNumber:tmp_binFileList)
+			try {
+				binContents.putAll(readFileContents(binFileNumber));
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 
         for (String x : queryKeyList) {
             outputHashMap.put(x, binContents.get(KEYWORD_KV + DIV_KEY + x));
@@ -752,4 +746,6 @@ public class SimpleKeyValueStorage {
         String parityFileKey = parityStart + "_" + parityEnd;
         return parityFileLocks.computeIfAbsent(parityFileKey, k -> new Object());
     }
+    
+   
 }
