@@ -1,3 +1,5 @@
+package application;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.IOException;
@@ -26,6 +28,7 @@ class SimpleCache {
     private int updateCycleTimeSec;
     private Function<Integer, HashMap<String, String>> readCacheFileFunction;
     private ScheduledExecutorService scheduler;
+    private Path filePath;
 
     /**
      * Constructor initializes the SimpleCache with the given parameters.
@@ -36,13 +39,27 @@ class SimpleCache {
      * @param readCacheFileFunction a function that takes an integer key and returns a HashMap of cache content
      */
     SimpleCache(Path filePath, int objCacheSize, int updateCycleTimeSec, Function<Integer, HashMap<String, String>> readCacheFileFunction) {
+        this(filePath, objCacheSize, updateCycleTimeSec);
+        this.readCacheFileFunction = readCacheFileFunction;
+    }
+
+    /**
+     * Constructor initializes the SimpleCache with the given parameters.
+     * readCacheFileFunction is set to null.
+     *
+     * @param filePath             the path to the .cache file containing initial cache keys
+     * @param objCacheSize         the maximum size of the cache
+     * @param updateCycleTimeSec   the interval in seconds at which the cache content is synchronized
+     */
+    SimpleCache(Path filePath, int objCacheSize, int updateCycleTimeSec) {
         this.listOfCacheFiles = new ArrayList<>();
         this.fileContentMap = new HashMap<>();
         this.cacheSize = objCacheSize;
         this.objectIsBusy = false;
         this.updateCycleTimeSec = updateCycleTimeSec;
-        this.readCacheFileFunction = readCacheFileFunction;
-
+        this.readCacheFileFunction = null;
+        this.filePath = filePath;
+        
         // Check if the file exists, create if not
         if (Files.notExists(filePath)) {
             try {
@@ -79,6 +96,15 @@ class SimpleCache {
 
         // Add shutdown hook to shutdown the scheduler
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
+    }
+
+    /**
+     * Sets the readCacheFileFunction.
+     *
+     * @param readCacheFileFunction the function to set for reading cache file
+     */
+    public void setReadCacheFileFunction(Function<Integer, HashMap<String, String>> readCacheFileFunction) {
+        this.readCacheFileFunction = readCacheFileFunction;
     }
 
     /**
@@ -142,8 +168,10 @@ class SimpleCache {
         this.objectIsBusy = true;
         System.out.println("Syncing cache content...");
         for (Integer key : this.listOfCacheFiles) {
-            HashMap<String, String> updatedContent = this.readCacheFileFunction.apply(key);
-            this.fileContentMap.put(key, updatedContent);
+            if (this.readCacheFileFunction != null) {
+                HashMap<String, String> updatedContent = this.readCacheFileFunction.apply(key);
+                this.fileContentMap.put(key, updatedContent);
+            }
         }
         // Update the .cache file with the current list of cache keys
         try {
