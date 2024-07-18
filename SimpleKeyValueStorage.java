@@ -38,16 +38,25 @@ public class SimpleKeyValueStorage {
      *      > binCount            	(Integer)       - number of bins/shards in the key-value storage
      *      > enableParity			(Boolean)		- enables file parity feature of the class
      *      > parityGroupCount		(Integer)		- number of bins/shards need for one parity file
-     *      > cacheObject			(SimpleCache)	- In-memory cache object
+     *      > cacheObject			(SimpleCache)	- In-memory cache object. This must be declared elsewhere
      * Output: SimpleKeyValueStorage Object
-     */
-    public SimpleKeyValueStorage(String storageDirectory, int binCount, boolean enableParity, int parityGroupCount) {
+     */    
+    public SimpleKeyValueStorage(String storageDirectory, int binCount, boolean enableParity, int parityGroupCount, SimpleCache cacheObject) {
         keyValueStorageLocation = Paths.get(storageDirectory);
         storageBinCount = binCount;
         enableParityFeature = enableParity;
         storageParityGroupSize = parityGroupCount;
         KVPool = new HashMap<>();
+        objCache = cacheObject;
         createStorageDirectoryIfNotExists();
+    }
+    
+    public SimpleKeyValueStorage(String storageDirectory, int binCount, boolean enableParity, int parityGroupCount) {
+    	this(storageDirectory,binCount,enableParity,parityGroupCount,null);
+    }
+    
+    public SimpleKeyValueStorage(String storageDirectory, int binCount) {
+    	this(storageDirectory,binCount,false,0,null);
     }
 
     private void createStorageDirectoryIfNotExists() {
@@ -268,53 +277,66 @@ public class SimpleKeyValueStorage {
      */
     protected HashMap<String, String> readFileContents(int binNumber) throws IOException {
         try {
-            return readFileContents(binNumber, 0);
+            return readFileContents(binNumber, 0, false);
         } catch (Exception e) {
             throw new IOException(e.getMessage());
         }
     }
 
-    protected HashMap<String, String> readFileContents(int binNumber, int loopcount) throws IOException {
+    protected HashMap<String, String> readFileContents(int binNumber, int loopcount, boolean disableCache) throws IOException {
         Path filePath = keyValueStorageLocation.resolve(FILE_PREFIX + binNumber + FILE_EXTENSION);
         if (!Files.exists(filePath)) {
             return new HashMap<>();
         }
 
         HashMap<String, String> outputMap = new HashMap<>();
-        try (BufferedReader reader = Files.newBufferedReader(filePath)) {
-            List<String> allLines = Files.readAllLines(filePath);
-            if (allLines.isEmpty()) {
-                throw new IOException("File is empty");
-            }
-
-            long fileChecksum = Long.parseLong(allLines.get(0));
-            List<String> dataLines = allLines.stream()
-            	    .skip(1)
-            	    .filter(line -> !line.trim().isEmpty() && !line.trim().startsWith("//"))
-            	    .collect(Collectors.toList());
-            if (enableParityFeature) {
-                CRC32 crc = new CRC32();
-                dataLines.forEach(line -> {
-                    crc.update(line.getBytes());
-                    crc.update(System.lineSeparator().getBytes());
-                });
-                long computedChecksum = crc.getValue();
-
-                if (fileChecksum != computedChecksum) {
-                    throw new IOException("Checksum mismatch detected");
-                }
-            }
-            dataLines.forEach(line -> parseFormattedLine(line, outputMap));
-        } catch (NumberFormatException | IOException e) {
-            System.err.println("<SimpleKeyValueStorage> Error reading the file: " + e.getMessage());
-            if (enableParityFeature) {
-                if (loopcount < MAX_RECOVERY_COUNT) {
-                    recoverBinFile(binNumber);
-                    return readFileContents(binNumber, loopcount + 1);
-                } else {
-                    throw new IOException(e.getMessage());
-                }
-            }
+        boolean readFile = true;
+        if(objCache != null && !disableCache) {
+        	HashMap<String,String> tmpMap = objCache.getCacheContent(binNumber);
+        	readFile = (tmpMap == null);
+        	if(!readFile)
+        		outputMap.putAll(tmpMap);
+        }
+        
+        if(readFile) {
+	        try (BufferedReader reader = Files.newBufferedReader(filePath)) {
+	            List<String> allLines = Files.readAllLines(filePath);
+	            if (allLines.isEmpty()) {
+	                throw new IOException("File is empty");
+	            }
+	
+	            long fileChecksum = Long.parseLong(allLines.get(0));
+	            List<String> dataLines = allLines.stream()
+	            	    .skip(1)
+	            	    .filter(line -> !line.trim().isEmpty() && !line.trim().startsWith("//"))
+	            	    .collect(Collectors.toList());
+	            if (enableParityFeature) {
+	                CRC32 crc = new CRC32();
+	                dataLines.forEach(line -> {
+	                    crc.update(line.getBytes());
+	                    crc.update(System.lineSeparator().getBytes());
+	                });
+	                long computedChecksum = crc.getValue();
+	
+	                if (fileChecksum != computedChecksum) {
+	                    throw new IOException("Checksum mismatch detected");
+	                }
+	            }
+	            dataLines.forEach(line -> parseFormattedLine(line, outputMap));
+	        } catch (NumberFormatException | IOException e) {
+	            System.err.println("<SimpleKeyValueStorage> Error reading the file: " + e.getMessage());
+	            if (enableParityFeature) {
+	                if (loopcount < MAX_RECOVERY_COUNT) {
+	                    recoverBinFile(binNumber);
+	                    return readFileContents(binNumber, loopcount + 1, disableCache);
+	                } else {
+	                    throw new IOException(e.getMessage());
+	                }
+	            }
+	        }
+	        
+	        if(objCache != null)
+	        	objCache.updateCacheContent(binNumber, outputMap);
         }
         return outputMap;
     }
@@ -366,7 +388,11 @@ public class SimpleKeyValueStorage {
                 writer.newLine();
                 writer.write(dataBuilder.toString()); // Write data
             }
-
+            
+            // Update cache
+            if(objCache != null)
+	        	objCache.updateCacheContent(binNumber, new HashMap<>(dataMap));
+            
             // Update Parity File
             if (enableParityFeature)
                 updateParityFile(binNumber);
