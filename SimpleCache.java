@@ -188,7 +188,7 @@ class SimpleCache {
     /**
      * Shuts down the scheduler to stop periodic synchronization.
      */
-    private void shutdown() {
+    public void shutdown() {
         if (this.scheduler != null) {
             this.scheduler.shutdown();
             try {
