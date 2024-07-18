@@ -3,7 +3,6 @@ package application;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
-import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 
@@ -28,17 +27,18 @@ public class SimpleKeyValueStorage {
     // Object Variables
     private Path keyValueStorageLocation; // Stores Location of the Storage Directory
     private int storageBinCount; // Contains number of data files in the Storage Directory
-    private ConcurrentHashMap<String, String> KVPool; // Storage of Key-Value Pairs before synchronization
+    private HashMap<String, String> KVPool; // Storage of Key-Value Pairs before synchronization
     private boolean enableParityFeature; // Enable parity feature for this class
     private int storageParityGroupSize; // Defines the maximum number of files ensured by a single parity file
-
-    // Executor for parallel tasks
-    private final ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    private SimpleCache objCache; // SimpleCache object for in-memory caching solution
 
     // Description: Class constructor
     /* Input Parameters
-     *      > storageDirectory       (String)        - Contains link to key-value storage directory
-     *      > binCount               (Integer)       - number of bins/shards in the key-value storage
+     *      > storageDirectory     	(String)     	- Contains link to key-value storage directory
+     *      > binCount            	(Integer)       - number of bins/shards in the key-value storage
+     *      > enableParity			(Boolean)		- enables file parity feature of the class
+     *      > parityGroupCount		(Integer)		- number of bins/shards need for one parity file
+     *      > cacheObject			(SimpleCache)	- In-memory cache object
      * Output: SimpleKeyValueStorage Object
      */
     public SimpleKeyValueStorage(String storageDirectory, int binCount, boolean enableParity, int parityGroupCount) {
@@ -46,7 +46,7 @@ public class SimpleKeyValueStorage {
         storageBinCount = binCount;
         enableParityFeature = enableParity;
         storageParityGroupSize = parityGroupCount;
-        KVPool = new ConcurrentHashMap<>();
+        KVPool = new HashMap<>();
         createStorageDirectoryIfNotExists();
     }
 
@@ -505,19 +505,14 @@ public class SimpleKeyValueStorage {
                     tmp_nGramList.remove(z);
                 }
             }
-
+            
             List<Integer> tmp_binFileList = getListOfBinFiles(tmp_nGramList, true);
-            List<Future<HashMap<String, String>>> futures = new ArrayList<>();
             for (int y : tmp_binFileList) {
-                futures.add(executorService.submit(() -> readFileContents(y)));
-            }
-
-            try {
-                for (Future<HashMap<String, String>> future : futures) {
-                    compiledBinFileContent.putAll(future.get());
-                }
-            } catch (InterruptedException | ExecutionException e) {
-                e.printStackTrace();
+            	 try {
+                         compiledBinFileContent.putAll(readFileContents(y));
+            	 }catch (Exception e) {
+                     e.printStackTrace();
+                 }
             }
 
             boolean FIRST_PASS = true;
@@ -576,17 +571,12 @@ public class SimpleKeyValueStorage {
 
             HashMap<String, String> compiledBinFileContent = new HashMap<>();
             List<Integer> tmp_binFileList = getListOfBinFiles(listOfnGram, true);
-            List<Future<HashMap<String, String>>> futures = new ArrayList<>();
             for (int y : tmp_binFileList) {
-                futures.add(executorService.submit(() -> readFileContents(y)));
-            }
-
-            try {
-                for (Future<HashMap<String, String>> future : futures) {
-                    compiledBinFileContent.putAll(future.get());
+                try {
+                        compiledBinFileContent.putAll(readFileContents(y));
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-            } catch (InterruptedException | ExecutionException e) {
-                e.printStackTrace();
             }
 
             for (String y : listOfnGram) {
