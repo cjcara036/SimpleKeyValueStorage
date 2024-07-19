@@ -365,13 +365,16 @@ public class SimpleKeyValueStorage {
         Path filePath = keyValueStorageLocation.resolve(FILE_PREFIX + binNumber + FILE_EXTENSION);
         // Ensure that parent directories exist and create file if it does not exist
         try {
+        	HashMap<String,String> tmp_dataMap = new HashMap<>();
             if (Files.notExists(filePath)) {
                 Files.createDirectories(filePath.getParent()); // Ensure the directory exists
                 Files.createFile(filePath); // Explicitly create the file if it does not exist
-            }
-            // Use a StringBuilder to gather all the data for checksum calculation
+            }else
+            	tmp_dataMap = readFileContents(binNumber);
+            // Use a StringBuilder to gather all the data for checksum 
+            tmp_dataMap.putAll(dataMap);
             StringBuilder dataBuilder = new StringBuilder();
-            TreeMap<String, String> sortedDataMap = new TreeMap<>(dataMap);
+            TreeMap<String, String> sortedDataMap = new TreeMap<>(tmp_dataMap);
             for (Map.Entry<String, String> entry : sortedDataMap.entrySet()) {
                 String formattedLine = createFormattedLine(entry.getKey(), entry.getValue());
                 dataBuilder.append(formattedLine).append(System.lineSeparator());
@@ -551,7 +554,9 @@ public class SimpleKeyValueStorage {
                         FIRST_PASS = false;
                         matchingKeys = new ArrayList<>(tmp_matchingKeys);
                     } else
-                        matchingKeys.retainAll(tmp_matchingKeys);
+                    	matchingKeys = matchingKeys.stream()
+                         .filter(e -> tmp_matchingKeys.contains(e))
+                         .collect(Collectors.toList());
 
                     if (matchingKeys.size() <= 1)
                         break;
