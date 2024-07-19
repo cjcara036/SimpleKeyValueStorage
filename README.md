@@ -1,105 +1,128 @@
-# SimpleKeyValueStorage
+# Simple Key-Value Storage with Caching
 
-`SimpleKeyValueStorage` is a Java implementation of a simple key-value storage system that supports efficient reads, writes, and wildcard searches. It also includes optional parity file support for fault tolerance.
+This project implements a simple key-value storage system with caching capabilities in Java. It consists of three main classes: SimpleKeyValueStorage, SimpleCache, and a Main class for benchmarking.
 
-## Features
+## Overview
 
-- **Simple Key-Value Storage**: Store and retrieve key-value pairs efficiently.
-- **Wildcard Search**: Supports searching keys with wildcard characters.
-- **Parity File Support**: Optional feature for fault tolerance using parity files.
-- **Concurrency**: Optimized for concurrent read and write operations.
+### SimpleKeyValueStorage
 
-## Installation
+SimpleKeyValueStorage is a class that provides a key-value storage system with the following features:
+- Sharded storage across multiple files
+- Support for wildcard searches
+- Optional parity file generation for data recovery
+- N-gram indexing for efficient searching
 
-1. **Clone the Repository**
+### SimpleCache
 
-   ```sh
-   git clone https://github.com/your-username/SimpleKeyValueStorage.git
-   cd SimpleKeyValueStorage
-   ```
+SimpleCache is a caching mechanism designed to work alongside SimpleKeyValueStorage. It provides:
+- In-memory caching of frequently accessed data
+- Periodic synchronization with the underlying storage
+- Configurable cache size and update cycle
 
-2. **Compile the Code**
+### Main
 
-   Ensure you have JDK installed. Then compile the code using:
+The Main class contains a benchmark test to evaluate the performance of the SimpleKeyValueStorage system with caching.
 
-   ```sh
-   javac -d out src/application/SimpleKeyValueStorage.java src/application/Main.java
-   ```
+## How to Use
 
-## Usage
+### SimpleKeyValueStorage
 
-### SimpleKeyValueStorage Class
+To use SimpleKeyValueStorage, follow these steps:
 
-The main class provides a simple API to store, retrieve, and manage key-value pairs.
-
-#### Constructor
+1. Create an instance of SimpleKeyValueStorage:
 
 ```java
-public SimpleKeyValueStorage(String storageDirectory, int binCount, boolean enableParity, int parityGroupCount)
+String storageDirectory = "path/to/storage";
+int binCount = 100;
+boolean enableParity = true;
+int parityGroupCount = 10;
+SimpleCache cache = new SimpleCache(Paths.get("cache.cache"), 1024, 120);
+
+SimpleKeyValueStorage storage = new SimpleKeyValueStorage(storageDirectory, binCount, enableParity, parityGroupCount, cache);
 ```
 
-- `storageDirectory`: Path to the storage directory.
-- `binCount`: Number of bins/shards in the key-value storage.
-- `enableParity`: Enable parity feature for fault tolerance.
-- `parityGroupCount`: Defines the maximum number of files ensured by a single parity file.
-
-#### Methods
-
-- **`void set(HashMap<String, String> inpHashMap)`**: Writes key-value pairs to the storage.
-- **`HashMap<String, String> get(List<String> keyList)`**: Reads key-value pairs from the storage.
-- **`void sync()`**: Saves the KVPool content to storage files.
-- **`void remove(List<String> keyList)`**: Removes key-value pairs from the storage.
-
-### Example
+2. Set key-value pairs:
 
 ```java
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Arrays;
+HashMap<String, String> data = new HashMap<>();
+data.put("key1", "value1");
+data.put("key2", "value2");
+storage.set(data);
+storage.sync(); // Write to storage
+```
 
-public class ExampleUsage {
-    public static void main(String[] args) {
-        String storageDirectory = "exampleStorage";
-        int binCount = 100;
-        boolean enableParity = true;
-        int parityGroupCount = 10;
+3. Get values:
 
-        SimpleKeyValueStorage storage = new SimpleKeyValueStorage(storageDirectory, binCount, enableParity, parityGroupCount);
+```java
+List<String> keys = Arrays.asList("key1", "key2");
+HashMap<String, String> result = storage.get(keys);
+```
 
-        // Setting key-value pairs
-        HashMap<String, String> data = new HashMap<>();
-        data.put("key1", "value1");
-        data.put("key2", "value2");
-        storage.set(data);
-        storage.sync();
+4. Remove keys:
 
-        // Getting values by keys
-        List<String> keys = Arrays.asList("key1", "key2");
-        try {
-            HashMap<String, String> retrievedData = storage.get(keys);
-            System.out.println(retrievedData);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+```java
+List<String> keysToRemove = Arrays.asList("key1", "key2");
+storage.remove(keysToRemove);
+```
+
+### SimpleCache
+
+SimpleCache is typically used in conjunction with SimpleKeyValueStorage. To use it:
+
+1. Create an instance of SimpleCache:
+
+```java
+Path cacheFilePath = Paths.get("cache.cache");
+int cacheSize = 1024;
+int updateCycleSeconds = 120;
+SimpleCache cache = new SimpleCache(cacheFilePath, cacheSize, updateCycleSeconds);
+```
+
+2. Set the read cache file function:
+
+```java
+cache.setReadCacheFileFunction(key -> {
+    try {
+        return storage.readFileContents(key, 0, true);
+    } catch (IOException e) {
+        e.printStackTrace();
     }
-}
+    return null;
+});
 ```
 
-## Performance Tips
+3. The cache will automatically be used by SimpleKeyValueStorage when provided in its constructor.
 
-- **Concurrency**: The class is optimized for concurrent read and write operations. Ensure you use it in a multi-threaded environment to leverage its full potential.
-- **Bin Count**: Choose an appropriate bin count (`binCount`) based on your expected dataset size to balance the load across bins.
-- **Parity Files**: Use the parity file feature (`enableParity`) if fault tolerance is required. This may slightly impact performance due to additional file operations.
+## Setting Up the Benchmark Test
 
-## Contributing
+To run the benchmark test in Main.java:
 
-Contributions are welcome! Please fork the repository and submit a pull request.
+1. Ensure you have the necessary storage directory set up.
+2. Run the `main` method in the `Main` class.
 
-## License
+The benchmark test will:
+1. Initialize SimpleKeyValueStorage and SimpleCache
+2. Generate test data (10,000 entries by default)
+3. Perform write operations and measure write rate
+4. Perform read operations and measure read rate
+5. Perform wildcard search operations and measure search rate
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+You can modify the following parameters in `Main.java` to adjust the benchmark:
 
-## Acknowledgments
+```java
+String storageDirectory = "benchmarkStorage";
+String cacheFile = "benchmarkCache.cache";
+int binCount = 100;
+boolean enableParity = true;
+int parityGroupCount = 10;
+int numberOfEntries = 10000;
+int numberOfReads = 100;
+int numberOfWildcardSearches = 100;
+```
 
-- Inspired by various key-value storage implementations.
+After running the benchmark, the results will be printed to the console, showing the duration and rate for write, read, and wildcard search operations.
+
+Note: Remember to call `cache.shutdown()` when you're done using the system to ensure proper cleanup.
+```
+
+This README.md provides an overview of the classes, instructions on how to use SimpleKeyValueStorage and SimpleCache, and explains how to set up and run the benchmark test in Main.java. You can further customize this README as needed for your project.
