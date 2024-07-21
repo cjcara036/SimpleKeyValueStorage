@@ -1,4 +1,4 @@
-package application;
+package data_processor;
 
 import java.io.*;
 import java.nio.file.*;
