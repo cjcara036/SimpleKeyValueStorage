@@ -1,4 +1,4 @@
-package application;
+package data_processor;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
