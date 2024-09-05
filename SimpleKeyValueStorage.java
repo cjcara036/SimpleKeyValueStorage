@@ -561,7 +561,7 @@ public class SimpleKeyValueStorage {
                          .filter(e -> tmp_matchingKeys.contains(e))
                          .collect(Collectors.toList());
 
-                    if (matchingKeys.size() <= 1 && !FIRST_PASS)
+                    if (matchingKeys.size() == 0)
                         break;
                     FIRST_PASS = false;
                 }
