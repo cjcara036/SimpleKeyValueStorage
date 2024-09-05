@@ -1,13 +1,13 @@
 package data_processor;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.IOException;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
  * SimpleCache class provides a caching mechanism for integer keys and their associated HashMaps.
  * The cache content is synchronized periodically using a specified function.
  */
-class SimpleCache {
+public class SimpleCache {
     private static final String CACHE_EXTENSION = ".cache";
     private List<Integer> listOfCacheFiles;
     private HashMap<Integer, HashMap<String, String>> fileContentMap;
@@ -51,7 +51,7 @@ class SimpleCache {
      * @param objCacheSize         the maximum size of the cache
      * @param updateCycleTimeSec   the interval in seconds at which the cache content is synchronized
      */
-    SimpleCache(Path filePath, int objCacheSize, int updateCycleTimeSec) {
+    public SimpleCache(Path filePath, int objCacheSize, int updateCycleTimeSec) {
         this.listOfCacheFiles = new ArrayList<>();
         this.fileContentMap = new HashMap<>();
         this.cacheSize = objCacheSize;
@@ -71,11 +71,17 @@ class SimpleCache {
         
         if (filePath.toString().endsWith(CACHE_EXTENSION)) {
             try {
-                Set<Integer> uniqueItems = new HashSet<>(Files.readAllLines(filePath).stream()
-                    .flatMap(line -> List.of(line.split(",")).stream())
-                    .map(String::trim)
-                    .map(Integer::parseInt)
-                    .collect(Collectors.toSet()));
+            	List<Integer> uniqueItems = new ArrayList<>();
+            	List<String> lines = Files.readAllLines(filePath);
+                for (String line : lines) {
+                    String[] parts = line.split(",");
+                    for (String part : parts) {
+                        String trimmed = part.trim();
+                        if (!trimmed.isEmpty()) {
+                            uniqueItems.add(Integer.parseInt(trimmed));
+                        }
+                    }
+                }
                 this.listOfCacheFiles = new ArrayList<>(uniqueItems);
                 
                 // Initialize fileContentMap with keys from listOfCacheFiles
@@ -178,7 +184,8 @@ class SimpleCache {
             String updatedKeys = this.listOfCacheFiles.stream()
                 .map(Object::toString)
                 .collect(Collectors.joining(","));
-            Files.writeString(filePath, updatedKeys, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.write(filePath, Collections.singletonList(updatedKeys), StandardCharsets.UTF_8, 
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
             System.err.println("Error updating the cache file: " + e.getMessage());
         }
