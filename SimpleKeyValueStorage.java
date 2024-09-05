@@ -70,6 +70,10 @@ public class SimpleKeyValueStorage {
         }
     }
 
+    public void setCache(SimpleCache obj) {
+    	objCache = obj;
+    }
+    
  // Description: Imports all key-value pairs from a source storage into this storage instance
     /*
      * Input Parameters
@@ -283,7 +287,7 @@ public class SimpleKeyValueStorage {
         }
     }
 
-    protected HashMap<String, String> readFileContents(int binNumber, int loopcount, boolean disableCache) throws IOException {
+    public HashMap<String, String> readFileContents(int binNumber, int loopcount, boolean disableCache) throws IOException {
         Path filePath = keyValueStorageLocation.resolve(FILE_PREFIX + binNumber + FILE_EXTENSION);
         if (!Files.exists(filePath)) {
             return new HashMap<>();
@@ -538,7 +542,7 @@ public class SimpleKeyValueStorage {
             List<Integer> tmp_binFileList = getListOfBinFiles(tmp_nGramList, true);
             for (int y : tmp_binFileList) {
             	 try {
-                         compiledBinFileContent.putAll(readFileContents(y));
+            		 compiledBinFileContent.putAll(readFileContents(y));
             	 }catch (Exception e) {
                      e.printStackTrace();
                  }
@@ -551,15 +555,19 @@ public class SimpleKeyValueStorage {
                 if (nGramMatchingKeysCommaSeparated != null) {
                     List<String> tmp_matchingKeys = commaSeparatedToList(nGramMatchingKeysCommaSeparated);
                     if (FIRST_PASS) {
-                        FIRST_PASS = false;
                         matchingKeys = new ArrayList<>(tmp_matchingKeys);
                     } else
                     	matchingKeys = matchingKeys.stream()
                          .filter(e -> tmp_matchingKeys.contains(e))
                          .collect(Collectors.toList());
 
-                    if (matchingKeys.size() <= 1)
+                    if (matchingKeys.size() <= 1 && !FIRST_PASS)
                         break;
+                    FIRST_PASS = false;
+                }
+                else {
+                	matchingKeys.clear();
+                	break;
                 }
             }
 
