@@ -29,7 +29,7 @@ public class SimpleCache {
     private Function<Integer, HashMap<String, String>> readCacheFileFunction;
     private ScheduledExecutorService scheduler;
     private Path filePath;
-
+    private cacheMap simpleCacheMap;
     /**
      * Constructor initializes the SimpleCache with the given parameters.
      *
@@ -59,6 +59,7 @@ public class SimpleCache {
         this.updateCycleTimeSec = updateCycleTimeSec;
         this.readCacheFileFunction = null;
         this.filePath = filePath;
+        this.simpleCacheMap = new cacheMap();
         
         // Check if the file exists, create if not
         if (Files.notExists(filePath)) {
@@ -207,5 +208,49 @@ public class SimpleCache {
             }
         }
         System.out.println("Scheduler shut down.");
+    }
+
+    //Private class to lessen cache overhead during read operation
+    private class cacheMap {
+        private static List<String> keyList = new ArrayList<>();
+        private static HashMap<String, String> cacheMapObj = new HashMap<>();
+    
+        public static List<String> updateQueryKeys(List<String> inpList) {
+            List<String> result = new ArrayList<>();
+            for (String key : inpList) {
+                if (!keyList.contains(key)) {
+                    result.add(key);
+                }
+            }
+            return result;
+        }
+    
+        public static void clearAll() {
+            keyList.clear();
+            cacheMapObj.clear();
+        }
+    
+        public static HashMap<String, String> getfromCacheMap(List<String> inpList) {
+            keyList.clear();
+            HashMap<String, String> result = new HashMap<>();
+            for (String key : inpList) {
+                if (cacheMapObj.containsKey(key)) {
+                    result.put(key, cacheMapObj.get(key));
+                    keyList.add(key);
+                }
+            }
+            return result;
+        }
+    
+        public static void setCacheMapContent(HashMap<String, String> inpMap) {
+            cacheMapObj.putAll(inpMap);
+        }
+    
+        public static void removeCacheMapContent(List<String> inpList) {
+            for (String key : inpList) {
+                cacheMapObj.remove(key);
+                keyList.remove(key);
+            }
+        }
     }
 }
